@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<mcp:server-config name="MCP_Server" doc:name="MCP Server" doc:id="d9799425-970d-49b4-85b7-24535fe43fcb" serverName="mule-mcp-server" serverVersion="1.0.0">
+		<mcp:sse-server-connection listenerConfig="listenerConfig" sseEndpointPath="/mcp-demo" />
+	</mcp:server-config>
+	<flow name="mc-mcp-confluence-sharepoint-mainFlow" doc:id="b01b9c77-fab0-432b-bedc-8c792c403e42" >
+		<mcp:tool-listener doc:name="MCP Server - Tool Listener" doc:id="9400799a-32c2-4749-b693-9deca0f3085f" config-ref="MCP_Server" name="retrieve-sharepoint-confluence-details">
+			<mcp:description ><![CDATA[Retrieve details about confluence and sharepoint]]></mcp:description>
+			<mcp:parameters-schema ><![CDATA[{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Raw Prompt Wrapper",
+  "type": "object",
+  "definitions": {
+    "sharepoint": {
+      "title": "Get sharepoint Request",
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "To fetch data from sharepoint"
+        }
+      },
+      "required": ["prompt"],
+      "additionalProperties": true
+    },
+    "confluence": {
+      "title": "Get confluence Request",
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "To fetch data from confluence"
+        }
+      },
+      "required": ["prompt"],
+      "additionalProperties": true
+    }
+  },
+  "properties": {
+    "operation": {
+      "type": "string",
+      "enum": ["confluence", "sharepoint"],
+      "description": "The type of operation to perform"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "required": ["operation", "data"],
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "operation": { "const": "sharepoint" } }
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "#/definitions/sharepoint" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "confluence" } }
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "#/definitions/confluence" }
+        }
+      }
+    }
+  ]
+}]]></mcp:parameters-schema>
+			<mcp:responses >
+				<mcp:text-tool-response-content text="#[payload.^raw]" />
+			</mcp:responses>
+		</mcp:tool-listener>
+		<logger level="INFO" doc:name="Start log" doc:id="80623103-69ee-4140-b5c4-e0faa85ffe75" message="### retrieve-employee-by-id Flow has started" />
+		<ee:transform doc:name="Read Data" doc:id="b584cf8e-3e3b-4f3d-a620-002f8e8db9e5">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  operation: payload.operation,
+  data: (payload.data.prompt )
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="d621ccf5-ddf4-4aef-b939-a3db5aa2ce3c" >
+			<when expression='#[payload.operation ~= "confluence"]'>
+				<flow-ref doc:name="mc-mcp-confluence-sapiFlow" doc:id="9a9c85ee-7fae-4c6e-8aa1-0a92d1c753f1" name="mc-mcp-confluence-sapiFlow" />
+			</when>
+			<otherwise >
+				<flow-ref doc:name="sharepoint-pocFlow" doc:id="07c096b3-17a2-4d5d-874d-958e67ab0aa3" name="sharepoint-pocFlow"/>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
