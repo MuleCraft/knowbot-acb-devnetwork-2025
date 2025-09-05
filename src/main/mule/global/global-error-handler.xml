@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<error-handler name="global-error-handler" doc:id="a5b83297-2c55-4ec0-ad23-027ee7f28386" >
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="e5cc067f-e644-4e59-a65d-352133be2dbe" type="ANY">
+			<ee:transform doc:name="Generic Error Transform" doc:id="ba3f6e05-dbc6-4909-aa89-73a078fc34f1">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "success": false,
+  "correlationId": correlationId,
+  "errorType": error.errorType.namespace ++ ":" ++ error.errorType.identifier,
+  "errorDescription": error.description,
+  "timestamp": now()
+}
+]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="httpStatus"><![CDATA[500]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+			<logger level="ERROR" doc:name="Log Generic Error" doc:id="0f99d18b-d1bd-4f71-9001-5d8d82a72f02" message="#[payload]" />
+		</on-error-propagate>
+	</error-handler>
+</mule>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:sharepoint="http://www.mulesoft.org/schema/mule/sharepoint" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sharepoint http://www.mulesoft.org/schema/mule/sharepoint/current/mule-sharepoint.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+	<http:listener-config name="listenerConfig" doc:name="HTTP Listener config">
+        <http:listener-connection host="${http.host}" port="${http.port}" />
+    </http:listener-config>
+    <sharepoint:sharepoint-online-config name="Sharepoint_Sharepoint_online" doc:name="Sharepoint Sharepoint online" doc:id="6c38fc16-c358-4c4a-8e87-586cc63736a0" >
+		<sharepoint:oauth-client-credentials-connection siteUrl="https://mulecraft.sharepoint.com/sites/MulecraftC4E" clientId="12c9e554-9383-494c-83c4-3999d9f86f05" tokenUrl="https://login.microsoftonline.com/896a45df-1e90-429b-aeba-563055ccdb7c/oauth2/v2.0/token" keyStorePassword="sharepoint" keyStoreType="JKS" keyStoreAlias="sharepoint-cert" keyStorePath="keystore.jks" scope="https://mulecraft.sharepoint.com/.default offline_access" objectStore="Object_store"/>
+	</sharepoint:sharepoint-online-config>
+	<os:object-store name="Object_store" doc:name="Object store" doc:id="e7a4cf9b-465e-449a-8105-b2c840799728" maxEntries="1000" entryTtl="1" entryTtlUnit="DAYS" expirationIntervalUnit="HOURS" />
+	<configuration doc:name="Configuration" doc:id="603e0956-e938-4e78-8c2c-f681ba76de7a" defaultErrorHandler-ref="global-error-handler" />
+	
+	
+	<http:request-config name="Confluence" doc:name="HTTP Request configuration" doc:id="a3ee242d-8454-4325-9da7-1733b61319f3" >
+		<http:request-connection protocol="HTTPS" >
+			<http:authentication >
+				<http:basic-authentication username="${secure::confluence.username}" password="${secure::confluence.token}" />
+			</http:authentication>
+		</http:request-connection>
+	</http:request-config>
+	<http:request-config name="Mistral_AI" doc:name="HTTP Request configuration" doc:id="aac3a073-3304-4b25-9296-a5ec6b980cf5" >
+		<http:request-connection protocol="HTTPS" />
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="d9f74abf-8114-4c59-99d4-558ece2bccc7" file="properties/${mule.env}.yaml" />
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="a0a3a6a2-2863-4894-885d-9e9a35e504d8" file="properties/${mule.env}.yaml" key="${mule.key}" >
+		<secure-properties:encrypt algorithm="Blowfish" />
+	</secure-properties:config>
+</mule>

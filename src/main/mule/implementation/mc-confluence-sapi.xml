@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	<sub-flow name="mc-mcp-confluence-sapiFlow" doc:id="1a099a47-74c7-473f-bad2-25d1a13babdd" >
+		
+		<logger level="INFO" doc:name="Logger" doc:id="d84a95c7-5a3e-496e-a127-671e12abcd82" />
+		<ee:transform doc:name="Mistral_AI Payload" doc:id="ba11a001-fd33-431a-8e00-f951e3d1ec08" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "model": "mistral-small-latest",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful AI assistant. Analyze the user's prompt and identify the primary keyword or topic, focusing on the unique or differentiating subject while ignoring common terms like 'confluence'. For the prompt 'can you please give me the email confluence page details,' the primary keyword is 'email'. For the prompt 'I want to know about get wso2 confluence can you search it for me? and provide details,' the primary keyword is 'wso2' because 'confluence' is a common term. Respond only with the primary keyword."
+      },
+      {
+        "role": "user",
+        "content": payload.data
+      }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 1000
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="userQuery" ><![CDATA[output application/json
+---
+payload.data
+]]>
+			</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="aef82913-ebf1-4269-a731-2017f19ee690" millisBetweenRetries="${until.seconds}">
+			<http:request method="POST" doc:name="Mistral_AI" doc:id="0f69a6e2-d053-4002-89bf-1c178c724450" config-ref="Mistral_AI" url="https://api.mistral.ai/v1/chat/completions">
+			<http:headers><![CDATA[#[output application/json
+---
+{
+	"Authorization" : "Bearer " ++ p('secure::mistral.token'),
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<ee:transform doc:name="KeyWord" doc:id="4fc4c4fc-26d3-4ad5-aa7b-7aa1f6a40f62" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="keyword" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.choices[0].message.content replace /[^A-Za-z0-9 ]/ with ""]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="KeyWord" doc:id="a5825c9c-9444-446b-b07a-0ce98e30b79d" message="#[vars.keyword]" />
+		<ee:transform doc:name="Confluence URL" doc:id="729277f2-8a1b-4e1e-b1a4-2b222cf3b91c" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="confluence_url" ><![CDATA[%dw 2.0
+import * from dw::core::URL
+output application/json
+---
+encodeURI("https://mulecraftindia.atlassian.net/wiki/rest/api/content/search?cql=title~'" ++ vars.keyword ++ "'")]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Cofluence URL" doc:id="a935af04-3281-4b5d-b1d1-d2894b8b0428" message="#[vars.confluence_url]" />
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="8c3c1669-f4f8-4d77-8c81-c7ca1ea87a5e" millisBetweenRetries="${until.seconds}">
+			<http:request method="GET" doc:name="Confluence Page Request" doc:id="af21be03-156d-46da-b0d0-4865e8d3889c" config-ref="Confluence" url="#[vars.confluence_url]" >
+			</http:request>
+		</until-successful>
+		<ee:transform doc:name="Content Variable" doc:id="9bfdc36b-234f-4383-bae5-36f46bdaf175" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="contentTitles" ><![CDATA[%dw 2.0
+output application/json
+---
+(payload.results filter ((item, index) -> item."type" == "page")) map ((item, index) ->{
+    "Title" : item.title
+} )]]></ee:set-variable>
+				<ee:set-variable variableName="content" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.results map ((item, index) ->{
+    "Title" : item.title,
+    "cofluence_link" : item."_links".self ++ "?expand=body.storage"
+} )]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<set-variable value='#[%dw 2.0
+output application/json
+---
+write(vars.contentTitles,"application/json")]' doc:name="String Titles" doc:id="5448b0b1-2c9e-4144-b74d-6a7c9c4ae88c" variableName="Titles"/>
+		<ee:transform doc:name="Transform" doc:id="ff0d7e3f-c183-4d29-9cc3-28de7afeff2f" >
+			<ee:message >
+				<ee:set-payload doc:name="Set payload" doc:id="21f98a17-3c75-47ef-ab7e-a71f8b97d0b8" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "model": "mistral-small-latest",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful AI assistant specializing in processing Confluence page queries. Follow this step-by-step process for every user request:\n\n1. Analyze the user's original prompt (provided as 'User's query:' in the message) to identify the primary keyword or main topic. For example, if the user's query is 'can you please give me the email confluence page details,' the primary keyword is 'email' because it represents the core subject of the request (e.g., details related to email in Confluence). For queries like 'I want to know about get wso2 confluence can you search it for me? and provide details,' the primary keyword is 'WSO2' as it focuses on WSO2-related Confluence pages and details.\n\n2. You will be provided with a list of Confluence page titles in JSON array format (as 'Confluence pages:'), simulating data retrieved via a MuleSoft connector. Filter this list to include only those titles that contain the primary keyword (case-insensitive match) in their title.\n\n3. From the filtered list, compare each title to the user's original query to determine the most suitable matches. Suitability is based on how closely the title aligns with the query's intent (e.g., for a query about WSO2 Confluence details, prioritize all titles related to WSO2 features, designs, best practices, or integrations). Select all relevant titles to provide comprehensive coverage, rather than limiting to a small number.\n\n4. Sort the selected titles alphabetically by their full title string.\n\n5. Respond only with the sorted list of selected titles in the exact JSON array format of objects like [{ \"Title\": \"sorted title 1\" }, { \"Title\": \"sorted title 2\" }], without any additional text, explanations, or formatting. If no matches are found, return an empty array []. If the input list includes additional fields like 'self' links, include them in the output objects (e.g., { \"Title\": \"title\", \"self\": \"link\" })."
+      },
+      {
+        "role": "user",
+        "content": "User's query: " ++ vars.userQuery ++ "\n\nConfluence pages: " ++ vars.Titles
+      }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 1000
+  }]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="d568ecc1-367f-4f4d-8c99-53125baac1ee" message="#[payload]"/>
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="ffd50014-c6c0-4b04-a5e7-0a7bbbb14950" millisBetweenRetries="${until.seconds}">
+			<http:request method="POST" doc:name="Title" doc:id="16a168e7-3d5c-4489-bcb6-816799c12526" config-ref="Mistral_AI" url="https://api.mistral.ai/v1/chat/completions">
+			<http:headers><![CDATA[#[output application/json
+---
+{
+	"Authorization" : "Bearer " ++ p('secure::mistral.token'),
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<ee:transform doc:name="Title Sort" doc:id="60c292b6-0697-4bbd-845c-c2933e9a4ba5" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="sortTitle" ><![CDATA[%dw 2.0
+output application/json
+---
+read(
+    payload.choices[0].message.content 
+        replace "```json\n" with "" 
+        replace "\n```" with "",
+    "application/json"
+)]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Content Values" doc:id="8b72e27e-c139-4946-af03-aa6ab40e5808" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+vars.content filter ((item, index) -> vars.sortTitle.Title contains  item.Title )]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="c3680630-ba3b-4e05-a406-35fa91d77a53" >
+			<when expression='#[payload."_links".next != null]' >
+				<logger level="INFO" doc:name="Logger" doc:id="c5de1982-2d25-4715-a299-a2f92a482a3d" message="Inside first choice and before VM Connector" />
+				<flow-ref doc:name="Flow Reference" doc:id="99365235-ffc4-4a98-aadf-6a9f434f6cf3" name="mc-mcp-confluence-sapiSub_Flow" />
+				<logger level="INFO" doc:name="Logger1" doc:id="725e7be1-791b-4a17-8e85-ffd779d29781" message="Inside first choice and After VM Connector" />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Default Logger" doc:id="156dde62-d590-4748-afcb-f1003b296799" message="The content data is less then 1000" />
+			</otherwise>
+		</choice>
+		<set-payload value="#[vars.content.cofluence_link]" doc:name="content" doc:id="a80cd996-aa53-49eb-bc68-c3ef5be7b223" />
+		<set-variable value="#[[]]" doc:name="value" doc:id="56631d91-605a-4eb1-924e-0adacedf3276" variableName="value" />
+		<choice doc:name="Choice1" doc:id="7b85e666-1388-4c02-936c-08bff60ac48d" >
+			<when expression="#[payload != null]" >
+				<try doc:name="Try" doc:id="b6f083be-ed4a-426a-b769-e7e491916d73" >
+					<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="75dd4c4a-2e7c-4de6-a929-d71f6d4c127b" millisBetweenRetries="${until.seconds}">
+						<foreach doc:name="For Each" doc:id="502c3fdb-5088-4a8c-ab0d-f578248df1ec">
+					<http:request method="GET" doc:name="Request" doc:id="902ff73f-88b5-41ca-aefc-bac0f131b768" config-ref="Confluence" url="#[payload]" >
+							</http:request>
+					<ee:transform doc:name="Transform Message" doc:id="12a2fb60-7fa0-4c23-806f-eb9f663442e9">
+						<ee:message />
+						<ee:variables>
+							<ee:set-variable variableName="value">
+							<![CDATA[%dw 2.0
+output application/json
+---
+[
+    {
+        "Title" : payload.title,
+        "Value" : (payload.body.storage.value replace /<[^>]+>/ with "")
+    }
+] ++ vars.value]]>
+						</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+				</foreach>
+					</until-successful>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5ecba936-8825-4642-bd4b-40308e0825ba" >
+							<ee:transform doc:name="Generic Error Transform" doc:id="d43ebed8-366a-4818-89e3-cca72788fd0f" >
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "success": false,
+  "correlationId": correlationId,
+  "errorType": error.errorType.namespace ++ ":" ++ error.errorType.identifier,
+  "errorDescription": error.description,
+  "timestamp": now()
+}
+]]></ee:set-payload>
+								</ee:message>
+								<ee:variables >
+									<ee:set-variable variableName="httpStatus" ><![CDATA[500]]></ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<logger level="ERROR" doc:name="Log Generic Error" doc:id="e807a5d0-1275-4ae9-a736-cf1e747deb94" message="#[payload]" />
+						</on-error-continue>
+					</error-handler>
+				</try>
+			
+</when>
+			<otherwise >
+				<set-variable value="No data found" doc:name="value" doc:id="bec36fa3-ebc1-4f25-a958-b10cb5c0d9a6" variableName="value" />
+			</otherwise>
+		</choice>
+		<set-payload value="#[vars.value]" doc:name="Set Payload1" doc:id="58a40371-9dad-4087-8147-ec36d89ceee3" />
+		<logger level="INFO" doc:name="Flow end" doc:id="864e9367-b00d-49bb-9ccb-e6ad0f864fc6" message="Flow end" />
+		
+	</sub-flow>
+	<sub-flow name="mc-mcp-confluence-sapiSub_Flow" doc:id="7fe7fb64-70a6-44c4-86f9-7156cb431be7" >
+		<logger level="INFO" doc:name="sub flow start" doc:id="c7648e09-2056-4101-b783-ab6b31812f94" message="sub flow start" />
+		<ee:transform doc:name="Confluence URL" doc:id="bacf2302-d7d5-4122-8101-b121b8d84d62" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="confluence_url" ><![CDATA[%dw 2.0
+output application/json
+---
+"https://mulecraftindia.atlassian.net/wiki" ++ payload."_links".next]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="49c46f70-5b54-40c1-92a7-ca11cf2050b5" millisBetweenRetries="${until.seconds}">
+			<http:request method="GET" doc:name="Request" doc:id="13e164cc-d38f-465e-b83a-6ee059ab72bc" config-ref="Confluence" url="#[vars.confluence_url]" >
+			</http:request>
+		</until-successful>
+		<ee:transform doc:name="Content Variable" doc:id="a373886e-f5d9-4911-a733-cea8e4e17179" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="content" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.results map ((item, index) ->{
+    "Title" : item.title,
+    "self" : item."_links".self ++ "?expand=body.storage"
+} ) ++ vars.content]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="be37e874-ab5a-43f2-aea7-6eda29b26f2e" >
+			<when expression='#[payload."_links".next != null]' >
+				<flow-ref doc:name="mc-mcp-confluence-sapiSub_Flow" doc:id="dc987243-9485-4ca9-afa5-1781312b201e" name="mc-mcp-confluence-sapiSub_Flow" />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="83d28a15-769c-4af1-99e6-30d717492bbd" message="Sub flow choice Log" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+	</mule>

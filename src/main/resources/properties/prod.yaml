@@ -1,0 +1,10 @@
+### Http listener configuration
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+### until successful config
+until:
+  retry: "3"
+  seconds: "6000"
+  

@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sharepoint="http://www.mulesoft.org/schema/mule/sharepoint" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sharepoint http://www.mulesoft.org/schema/mule/sharepoint/current/mule-sharepoint.xsd">
+	<flow name="sharepoint-pocFlow" doc:id="a5e93a0a-41f5-4f53-8765-e2eefbf1ecec">
+		<logger level="INFO" doc:name="Start Logger" doc:id="fba65747-24cb-461d-ae39-250ab1d17535" message='#[output json&#10;---&#10;{&#10;    status: "Sharepoint Summarize files flow started",&#10;    flowName: flow.name,&#10;    correlationId: correlationId,&#10;    timestamp: now() as DateTime,&#10;}]'/>
+		<ee:transform doc:name="Prepare Mistral AI Keyword Request" doc:id="bf4870a7-c668-40c5-9a9c-2ca4238b880d">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "model": "mistral-small-latest",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a keyword extraction assistant for SharePoint document queries. Your task is to identify and return ONLY the primary keyword from user queries.\n\nRules:\n1. Extract the most important business/technical term from the query\n2. Return only the keyword, nothing else\n3. Use lowercase format\n4. If multiple keywords exist, choose the most specific one\n5. Ignore common words like: document, details, information, please, can, you, give, me, related, etc.\n\nExamples:\n- Query: \"can you please give me the colour related document details\" → Response: \"colour\"\n- Query: \"I need information about Azure DevOps\" → Response: \"azure devops\"\n- Query: \"Show me PowerBI reports documentation\" → Response: \"powerbi\"\n- Query: \"Find documents related to API integration\" → Response: \"api integration\""
+    },
+    {
+      "role": "user",
+      "content": payload.data
+    }
+  ],
+  "temperature": 0.1,
+  "max_tokens": 50
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="cbed2764-aa63-4ea6-b9b4-0d1a144fbdda" millisBetweenRetries="${until.seconds}">
+			<http:request method="POST" doc:name="Call Mistral AI Keyword Extraction" doc:id="e9c31635-3506-4847-8779-d8ea217cfe37" url="https://api.mistral.ai/v1/chat/completions">
+			<http:headers><![CDATA[#[output application/json
+---
+{
+	"Authorization" : "Bearer " ++ p('secure::mistral.token'),
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+		</http:request>
+		</until-successful>
+		<logger level="INFO" doc:name="Keyword Logger" doc:id="cc7a4f2c-93c5-49e6-927b-cddca1b4cff4" message="Received keyword from Mistral AI keyword extraction: #[payload.choices[0].message.content]" />
+		<ee:transform doc:name="Transform Message" doc:id="3f4c17a2-a5f1-45e6-9123-52eaf35439d5" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="4a15b3f5-6687-4a28-a7ad-80ad1e0011b3" millisBetweenRetries="${until.seconds}">
+			<http:request method="GET" doc:name="Sharepoint Request" doc:id="dcc6d1ba-875e-444e-ba78-542d769d7b28" url="${secure::sharepoint.url}">
+				<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"route" : "fileQuery"
+}]]]></http:query-params>
+			</http:request>
+		</until-successful>
+		<choice doc:name="Choice" doc:id="41e0f74a-7990-48ba-bab7-a45b7a83afff">
+					<when expression="#[sizeOf(payload) &gt; 0]">
+						<ee:transform doc:name="Extract File Names from Query Result" doc:id="299a85e6-9aee-4549-bf26-d868f2586397">
+        <ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map (item) -> item.Name]]></ee:set-payload>
+
+        </ee:message>
+			<ee:variables>
+			</ee:variables>
+    
+</ee:transform>
+						<try doc:name="Try" doc:id="811d960f-d44e-4c4d-a3cc-ab6193b1971a" >
+					<parallel-foreach doc:name="Process Files in Parallel" doc:id="f8af68fc-b4f0-4472-9c93-039ba6622c52">
+							<ee:transform doc:name="Build File Path" doc:id="5422a779-0d6a-43f0-be82-250d4f664afd">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output text/plain
+---
+"/sites/MulecraftC4E/Shared Documents/Snaplogic Playground/" ++ payload]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="fileName"><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+							<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="7efdd3ea-5969-4e63-8b7e-87a568f5ddf9" millisBetweenRetries="${until.seconds}">
+							<http:request method="GET" doc:name="Sharepoint Request" doc:id="58909cc9-b12b-4a3c-bd25-b61ec02c3a39" url="${secure::sharepoint.url}">
+								<http:body ><![CDATA[#[%dw 2.0
+output text/plain
+---
+payload]]]></http:body>
+								<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"route" : "getContent"
+}]]]></http:query-params>
+							</http:request>
+						</until-successful>
+					<ee:transform doc:name="Structure File Data Response" doc:id="9c93d69d-78c8-4e0b-b145-0243cdf0edd7">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	fileName: vars.fileName,
+	details: payload
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		
+</parallel-foreach>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="53f6bf5c-654f-4a2a-abcc-5ad24a7adc40" >
+							<ee:transform doc:name="Generic Error Transform" doc:id="b5f659c1-cc2f-4be0-998e-0d8e952ec965" >
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "success": false,
+  "correlationId": correlationId,
+  "errorType": error.errorType.namespace ++ ":" ++ error.errorType.identifier,
+  "errorDescription": error.description,
+  "timestamp": now()
+}
+]]></ee:set-payload>
+								</ee:message>
+								<ee:variables >
+									<ee:set-variable variableName="httpStatus" ><![CDATA[500]]></ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<logger level="ERROR" doc:name="Log Generic Error" doc:id="f85a6498-0865-47bd-9acd-3c67d00f0df7" message="#[payload]" />
+						</on-error-continue>
+					</error-handler>
+				
+</try>
+				<ee:transform doc:name="Aggregate Parallel Results" doc:id="ed3d2e30-c66b-454b-8dc5-21c42343e77f">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+						<ee:transform doc:name="Prepare AI Summarization Request" doc:id="ae71de6f-1b01-4fb6-b84a-9db3d2f857bc">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var filteredFiles = payload filter (item) -> 
+    item.payload.fileName != null and item.payload.details != null
+var formattedContent = filteredFiles map (item, index) -> 
+    "File: $(item.payload.fileName)\nDetails: $(item.payload.details replace /\r\n/ with '\n')"
+---
+{
+  "model": "mistral-small-latest",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a JSON and CSV file analysis assistant. Your task is to analyze and summarize JSON and CSV file contents provided in a structured format.\n\nFor each file, provide:\n1. File name\n2. Data type/structure (e.g., \"Array of objects\", \"Single object\", \"Nested object\")\n3. Main content description\n4. Key fields/properties identified\n5. Record count (if applicable)\n\nReturn your analysis in the following JSON format:\n{\n  \"summary\": {\n    \"totalFiles\": number,\n    \"files\": [\n      {\n        \"fileName\": \"string\",\n        \"dataStructure\": \"string\",\n        \"contentDescription\": \"string\",\n        \"keyFields\": [\"field1\", \"field2\"],\n        \"recordCount\": number,\n        \"dataCategory\": \"string\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "user",
+      "content": "Analyze and summarize the following JSON or CSV file details:\n\n" ++ 
+        (formattedContent joinBy "\n\n")
+    }
+  ],
+  "response_format": {
+    "type": "json_object"
+  },
+  "temperature": 0.3,
+  "max_tokens": 1500
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+						<until-successful maxRetries="${until.retry}" doc:name="Until Successful" doc:id="70beb370-a652-4a96-8db8-667bcd0b0360" millisBetweenRetries="${until.seconds}">
+					<http:request method="POST" doc:name="Call Mistral AI File Analysis" doc:id="c500970c-13c6-4bd2-917e-693e88da214e" url="https://api.mistral.ai/v1/chat/completions">
+			<http:headers><![CDATA[#[output application/json
+---
+{
+	"Authorization" : "Bearer " ++ p('secure::mistral.token'),
+	"Content-Type" : "application/json"
+}]]]></http:headers>
+		</http:request>
+				</until-successful>
+						<ee:transform doc:name="Parse AI Analysis Response" doc:id="d1dfe226-e446-4288-83f2-a7be94f33243">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+read(payload.choices[0].message.content, "application/json")]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+					
+</when>
+					<otherwise>
+						<logger level="INFO" doc:name="Logger" doc:id="86a4fe52-c12d-4a24-a077-4d1456222750" message="No content found related to given keyword"/>
+					</otherwise>
+				</choice>
+		<logger level="INFO" doc:name="End Logger" doc:id="dde40d51-a379-4ce1-bac8-b123bb0c76b7" message='#[output json&#10;---&#10;{&#10;    status: "Sharepoint Summarize files flow ended",&#10;    flowName: flow.name,&#10;    correlationId: correlationId,&#10;    timestamp: now() as DateTime,&#10;}]' />
+
+</flow>
+</mule>
