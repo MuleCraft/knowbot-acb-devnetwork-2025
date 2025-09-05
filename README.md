@@ -127,3 +127,23 @@
 • **Future Vision**: Enterprise knowledge management evolution toward intelligent orchestration understanding context and usage patterns
 
 • **Implementation Validation**: Hackathon experience demonstrated achievable capabilities using existing enterprise integration platforms with emerging AI technologies
+
+## Challenges Faced
+ 
+### Cursor (MCP Configuration)
+- When using Cursor, it is necessary to interact through the **Model Context Protocol (MCP)**—without this, Cursor often prefers to launch actions via its embedded browser or directly point to a website instead of calling the custom tool.
+- The MCP setup in Cursor requires configuring your `mcp.json` file and ensuring the tool is registered through **Settings > Developer > Edit Config > MCP Tools** and by adding a “Custom MCP”. Without proper MCP registration, Cursor does not route prompts to the intended backend service and defaults to in-app browser/web queries first.
+ 
+### Upload to Cloud / Confluence 403 Forbidden
+- When attempting to fetch details or upload/fetch documents from Confluence, the system returned a **403 Forbidden error**.
+- This typically indicates issues such as:
+  - Missing or invalid authentication/authorization credentials (API tokens/keys not present or invalid).
+  - The service account or API user lacks required permissions on the Confluence site or the target content.
+  - Confluence space or document-level restrictions are preventing access even with valid credentials.
+- To resolve, verify:
+  - The correct API token or OAuth credentials are supplied in the request header.
+  - The user has necessary permissions on both Confluence and the specific space/page being accessed.
+  - Network policies or admin settings are not blocking API access for third-party apps.
+ 
+**Summary:**  
+MCP must be correctly configured for effective Cursor integration, and Confluence access failures are often permission or authentication related. Both areas must be set up and tested thoroughly to avoid redirection or API errors in enterprise automation projects.
